@@ -1,0 +1,270 @@
+---
+title: "Formative Assessment 11: Mixed-Design Repeated Measures ANOVA"
+subtitle: "BIO2105 - Biostatistics"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 5,
+  fig.align = "center"
+)
+```
+
+# 1. Introduction and Research Objectives
+
+## Research Background
+
+In an experimental study of rat growth (Box, 1950), rats were assigned to three treatment groups: **Control** (no additive), **Thiouracil**, and **Thyroxin** administered via drinking water. Body weights were recorded across five measurement occasions: **Baseline (Week 0)** through **Week 4**.
+
+Following an accident, three rats were removed from the Thyroxin group, leaving $N = 27$ rats and 135 total observations.
+
+## Research Objective
+
+To determine whether rat body weight differs significantly across treatment groups and measurement occasions, and specifically to evaluate whether growth trajectories over time depend on the treatment received (**Treatment** $\times$ Time Interaction).
+
+------------------------------------------------------------------------
+
+# 2. Data Preparation and Exploration
+
+```{r load-data}
+# 1. Load required libraries
+library(nlmm)
+library(tidyverse)
+library(rstatix)
+library(ggpubr)
+
+# 2. Load dataset
+data("rats", package = "nlmm")
+
+# 3. Format factor variables with clear labels
+rats <- rats %>%
+  mutate(
+    id = factor(id),
+    trt = factor(
+      trt,
+      levels = c(1, 2, 3),
+      labels = c("Control", "Thiouracil", "Thyroxin")
+    ),
+    time = factor(
+      time,
+      levels = 0:4,
+      labels = c("Week 0", "Week 1", "Week 2", "Week 3", "Week 4")
+    )
+  )
+
+# 4. Inspect data structure
+str(rats)
+dim(rats)
+head(rats)
+table(rats$trt)
+
+unique(rats$trt)
+unique(rats$time)
+```
+
+### Guide Question Answer
+
+- **Why is the dataset in long format?**\
+  *[Insert your answer here: Explain why long format is required for repeated measures and how `id` maps repeated measurements to individual experimental units.]*
+
+------------------------------------------------------------------------
+
+# 3. Descriptive Statistics and Data Visualization
+
+## 3.1 Descriptive Summary
+
+```{r descriptive-stats}
+rats %>%
+  group_by(trt, time) %>%
+  get_summary_stats(y, type = "mean_sd")
+```
+
+## 3.2 Visualizations
+
+```{r boxplot}
+# Boxplot across time points by treatment group
+ggboxplot(
+  rats,
+  x = "time",
+  y = "y",
+  color = "trt",
+  palette = "jco",
+  add = "jitter"
+) +
+  labs(
+    title = "Body Weight Distribution Across Weeks by Treatment",
+    x = "Measurement Occasion",
+    y = "Body Weight (grams)",
+    color = "Treatment"
+  )
+```
+
+```{r interaction-plot}
+# Interaction plot of mean body weights over time
+rats %>%
+  group_by(trt, time) %>%
+  summarise(mean_weight = mean(y), .groups = "drop") %>%
+  ggplot(aes(x = time, y = mean_weight, color = trt, group = trt)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  labs(
+    title = "Mean Growth Trajectories by Treatment Group",
+    x = "Measurement Occasion",
+    y = "Mean Body Weight (grams)",
+    color = "Treatment"
+  ) +
+  theme_minimal()
+```
+
+### Guide Questions Answers
+
+- **Baseline Highest Average:** *[Answer here]*
+- **Growth Patterns per Group:** *[Answer here]*
+- **Visual Evidence of Interaction:** *[Answer here]*
+
+------------------------------------------------------------------------
+
+# 4. Assumption Checking
+
+## 4.1 Normality Test (Shapiro-Wilk)
+
+```{r normality-test}
+# Shapiro-Wilk test per Treatment x Time combination
+rats %>%
+  group_by(trt, time) %>%
+  shapiro_test(y)
+```
+
+## 4.2 Outlier Detection
+
+```{r outlier-detection}
+# Identify univariate extreme outliers
+rats %>%
+  group_by(trt, time) %>%
+  identify_outliers(y)
+```
+
+## 4.3 Homogeneity of Variances (Levene's Test)
+
+```{r levene-test}
+# Conduct Levene's test at each measurement occasion
+rats %>%
+  group_by(time) %>%
+  levene_test(y ~ trt)
+```
+
+## 4.4 Homogeneity of Covariance Matrices (Box's M Test)
+
+```{r box-m-test}
+# Reshape data to wide format for Box's M test
+rats_wide <- rats %>%
+  pivot_wider(
+    id_cols = c(id, trt),
+    names_from = time,
+    values_from = y,
+    names_prefix = "time_"
+  )
+
+# Perform Box's M test (evaluate at alpha = 0.001)
+box_m(
+  rats_wide %>% select(starts_with("time_")),
+  rats_wide$trt
+)
+```
+
+## 4.5 Summary of Assumptions
+
+*[Summarize whether normality, outliers, variance homogeneity, covariance homogeneity, and sphericity are reasonably satisfied or require corrections.]*
+
+------------------------------------------------------------------------
+
+# 5. Mixed-Design Repeated Measures ANOVA
+
+```{r mixed-anova}
+# Fit mixed ANOVA
+res.aov <- anova_test(
+  data = rats,
+  dv = y,
+  wid = id,
+  between = trt,
+  within = time
+)
+
+# Display complete ANOVA and Sphericity output
+res.aov
+
+# Extract formatted ANOVA table
+get_anova_table(res.aov)
+```
+
+------------------------------------------------------------------------
+
+# 6. Post Hoc Analysis and Interaction Decomposition
+
+## 6.1 Simple Main Effects: Treatment Differences at Each Week
+
+```{r simple-main-treatment}
+# One-way ANOVA per time point
+rats %>%
+  group_by(time) %>%
+  anova_test(dv = y, wid = id, between = trt) %>%
+  get_anova_table()
+
+# Tukey HSD pairwise comparisons per week
+rats %>%
+  group_by(time) %>%
+  tukey_hsd(y ~ trt)
+```
+
+## 6.2 Simple Main Effects: Time Differences Within Each Group
+
+```{r simple-main-time}
+# Repeated measures ANOVA per treatment group
+rats %>%
+  group_by(trt) %>%
+  anova_test(dv = y, wid = id, within = time) %>%
+  get_anova_table()
+
+# Paired t-tests between weeks with Holm correction
+rats %>%
+  group_by(trt) %>%
+  pairwise_t_test(
+    y ~ time,
+    paired = TRUE,
+    p.adjust.method = "holm"
+  )
+```
+
+------------------------------------------------------------------------
+
+# 7. APA-Style Results and Discussion
+
+## APA Results Paragraph
+
+> A two-way mixed-design repeated measures ANOVA was conducted to evaluate the effect of three treatment conditions (Control, Thiouracil, and Thyroxin) across five measurement occasions (Week 0 to Week 4) on rat body weight. There was a significant main effect of Treatment, $F(\text{df}_{\text{num}}, \text{df}_{\text{den}}) = \text{X.XX}$, $p < .001$, $\eta_G^2 = \text{X.XX}$, and a significant main effect of Time, $F(\text{df}_{\text{num}}, \text{df}_{\text{den}}) = \text{X.XX}$, $p < .001$, $\eta_G^2 = \text{X.XX}$. Crucially, the Treatment $\times$ Time interaction was statistically significant, $F(\text{df}_{\text{num}}, \text{df}_{\text{den}}) = \text{X.XX}$, $p < .001$, $\eta_G^2 = \text{X.XX}$, indicating that body weight trajectories over time differed depending on the treatment administered. *[Complete post-hoc findings here]*.
+
+## Central Research Question Conclusion
+
+> **Does the effect of treatment on rat body weight depend on the measurement occasion?**\
+> *[Write your direct conclusion here based on the statistical interaction.]*
+
+------------------------------------------------------------------------
+
+# 8. References
+
+- Box, G. E. P. (1950). Problems in the analysis of growth and wear curves. *Biometrics, 6*(4), 362–389.
+- Kassambara, A. (2023). *rstatix: Pipe-Friendly Framework for Basic Statistical Tests*. R package.
+- Lapointe, N. (2020). *nlmm: Generalized Linear Mixed-Effects Models*. R package dataset `rats`.
