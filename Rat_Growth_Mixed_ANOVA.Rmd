@@ -78,7 +78,7 @@ unique(rats$time)
 ### Guide Question Answer
 
 - **Why is the dataset in long format?**\
-  *[Insert your answer here: Explain why long format is required for repeated measures and how `id` maps repeated measurements to individual experimental units.]*
+  *A long format is required because repeated measures ANOVA and tidyverse/rstatix modeling functions (`anova_test()`, `ggplot2`) expect each row to represent a single observation of the outcome variable (`y`) under a specific within-subjects condition (`time`) paired with a between-subjects factor (`trt`), allowing the subject identifier (`id`) to link all five weekly measurements (`Week 0` through `Week 4`) back to the same individual rat as a paired experimental unit—which also naturally accommodates the unequal group size ($N = 27$ rats, 135 total rows) after three rats were removed from the Thyroxin group without needing awkward wide-table padding or missing-column gymnastics.*
 
 ------------------------------------------------------------------------
 
